@@ -1,0 +1,160 @@
+\documentclass{article}
+
+\usepackage{amsmath}
+%\usepackage{amsfonts}
+\usepackage{amsthm}
+%\usepackage{amssymb}
+%\usepackage{mathrsfs}
+%\usepackage{fullpage}
+%\usepackage{mathptmx}
+%\usepackage[varg]{txfonts}
+\usepackage{natbib}
+\usepackage{color}
+\usepackage[charter]{mathdesign}
+\usepackage[pdftex]{graphicx}
+%\usepackage{float}
+%\usepackage{hyperref}
+%\usepackage[modulo, displaymath, mathlines]{lineno}
+%\usepackage{setspace}
+%\usepackage[titletoc,toc,title]{appendix}
+
+%\linenumbers
+%\doublespacing
+
+\theoremstyle{definition}
+\newtheorem*{defn}{Definition}
+\newtheorem*{exm}{Example}
+
+\theoremstyle{plain}
+\newtheorem*{thm}{Theorem}
+\newtheorem*{lem}{Lemma}
+\newtheorem*{prop}{Proposition}
+\newtheorem*{cor}{Corollary}
+
+\newcommand{\argmin}{\text{argmin}}
+\newcommand{\ud}{\hspace{2pt}\mathrm{d}}
+\newcommand{\bs}{\boldsymbol}
+\newcommand{\PP}{\mathsf{P}}
+
+\title{Measured and modelled three-dimensional layer slopes across the Whillans Grounding zone}
+\author{Andrew Hoffman, Jessica Bagdeley, Daniel Shapero, Knut Christianson, Nick Holschuh}
+\date{}
+
+\begin{document}
+
+\tableofcontents
+\newpage
+
+\maketitle
+
+\begin{abstract}
+In 2009, a dense radar survey across the grounding zone of the Whillans ice stream was collected as part of the WIZZARD project. 
+Layer slopes in these data show evidence of tidally compacted sediments near the grounding zone that appear to slow the overlying ice forcing ice upward over the grounding zone imaged as a bump in the radar layers.
+We use the slopes solver in the ice sheet model icepack to formulate an inverse problem to determine the resistance of the
+
+\end{abstract}
+
+\section{Introduction}
+
+The internal stratigraphy of ice sheets and glaciers measured using high frequency (HF) and ultra high frequency (UHF) radar systems represents the largest three-dimensional ice-sheet dataset in existence today, and yet, these observations are not regularly assimilated into three dimensional simulations of ice-sheet motion (Whillans et al. 1986, Hindmarsh et al 1995, Pattyn et al 2009, Holschuh et al 2017).
+This is because ice-sheet internal layers do not unambiguously represent the static stress state of the modern ice sheet as they are influenced by historic accumulation rates and advect downstream, convolving signals associated with the paleo ice sheet with the modern state.
+Here, we infer the basal shear stress of the Whillans ice stream from modern surface elevation and velocity observations and use this shear stress field to solve for the model consistent layer slope field.
+We then compare these layer slopes with the layer slopes we measure in ice penetrating radar echograms and use agreement between our model and observations to build a criterion for assimilating layer slope observations in model inversions for parameters controlling ice.
+
+
+\begin{figure}[h]
+    \includegraphics[width=0.95\linewidth]{figures/fig01.png}
+    \caption{The normalized ocean pressure ($p_w / \rho_Wg$) and Legendre polynomial approximations of several degrees (left), and the residuals of the approximation (right).
+    For this particular example, the waterline is at $\zeta = 1/3$.
+    The moments of each of the residuals up to the approximation degree are all zero.}
+    \label{fig:legendre}
+\end{figure}
+
+
+\section{Layer Slopes}
+
+We calculate layer slopes using the rolling radon transform algorithm described by Holcshuh et al. 2017.
+
+
+\begin{figure}[h]
+    \includegraphics[width=0.95\linewidth]{figures/fig02.png}
+    \caption{The normalized ocean pressure ($p_w / \rho_Wg$) and Legendre polynomial approximations of several degrees (left), and the residuals of the approximation (right).
+    For this particular example, the waterline is at $\zeta = 1/3$.
+    The moments of each of the residuals up to the approximation degree are all zero.}
+    \label{fig:legendre}
+\end{figure}
+
+
+
+\section{Inverse solvers} \label{sec:numerics-inverse-solvers}
+
+The \texttt{InverseProblem} class describes what problem is being solved, while the \texttt{InverseSolver} class is responsible for carrying out the numerical optimization.
+There are three inverse solvers in icepack: a simple gradient descent solver, a quasi-Newton solver based on the BFGS approximation to the Hessian, and a Gauss-Newton solver.
+All of these classes are based around the general idea of first computing a search direction and then performing a line search.
+They differ in how the search direction is computed.
+
+The gradient descent solver uses the search direction
+\begin{equation}
+    \phi_k = -M^{-1}\ud J(\theta_k)
+\end{equation}
+where $M$ is the finite element mass matrix.
+Gradient descent is a popular choice because the objective functional is always decreasing along this search direction.
+However, the search direction can be poorly scaled to the physical dimensions of the problem at hand.
+This method can be very expensive and brittle in the initial iterations and often takes many steps to converge.
+
+The BFGS method uses the past $m$ iterations of the algorithm to compute a low-rank approximation to the inverse of the objective functional's Hessian matrix; see \citet{nocedal2006numerical} for a more in-depth discussion.
+The BFGS method converges faster than gradient descent.
+However, it suffers from many of the same brittleness issues in the initial iterations before it has built up enough history to approximate the Hessian inverse.
+
+Finally, the Gauss-Newton solver defines an approximation to the ``first-order'' part of the objective functional Hessian.
+Each iteration of Gauss-Newton is more expensive than that of BFGS or gradient descent because it requires the solution of a more complex linear system than just the mass matrix.
+The Gauss-Newton method converges fastest by far in virtually every test case we have found, in some instances by up to factor of 50.
+
+The derivative of the objective functional with respect to the unknown parameter is calculated using the symbolic differentiation features of Firedrake.
+The user does not need to provide any routines for the derivatives, only the symbolic form of the error metric and the regularization functional.
+The model object is responsible for providing the symbolic form of the action functional.
+
+\subsubsection{modeling vertical velocity}
+
+The hybrid flow model implemented in icepack can be used to solve for the horizontal velocities with depth, which can be used with a continuity assumption to solve for the vertical velocitities with depth.
+
+\begin{equation}
+    w = m - \int_\Gamma\int_0^1 \rho_Wgh(\zeta_{\text{sl}} - \zeta)_+\ud\zeta\ud\gamma,
+\end{equation}
+where $\zeta_{\text{sl}}$ denotes the relative depth to the water line and the subscript $+$ denotes the positive part of a real number.
+Were we to use the standard asssembly procedure in Firedrake to evaluate this integral, we would get an inaccurate result due to an insufficient number of integration points.
+The resulting velocity solutions are then wildly inaccurate due to the mis-specification of the Neumann boundary condition.
+A blunt solution to this problem would be to pass an extra argument to the Firedrake form compiler that specifies a much greater integration accuracy in the vertical for this term.
+This fix reduces the errors in the velocities, but it does not eliminate them completely and it incurs a large computational cost.
+
+\begin{figure}[h]
+    \includegraphics[width=0.95\linewidth]{demos/legendre/pressure.png}
+    \caption{The normalized ocean pressure ($p_w / \rho_Wg$) and Legendre polynomial approximations of several degrees (left), and the residuals of the approximation (right).
+    For this particular example, the waterline is at $\zeta = 1/3$.
+    The moments of each of the residuals up to the approximation degree are all zero.}
+    \label{fig:legendre}
+\end{figure}
+
+We instead implemented a routine that symbolically calculates the Legendre polynomial expansion of the function $(\zeta_{\text{sl}} - \zeta)_+$ with respect to the parameter $\zeta_{\text{sl}}$ using the package SymPy \citep{sympy}.
+The symbolic variables for $\zeta$ and $\zeta_{\text{sl}}$ used in the SymPy representation of the polynomial expansion are then substituted for equivalent symbolic variables in Firedrake/UFL using the SymPy object's \texttt{subs} method.
+The Legendre polynomial approximation to this function only converges linearly as the number of coefficients is increased, since the the function is continuous but not smooth, and the approximation exhibits noticeable ringing artifacts at high degree.
+While the approximation itself is not very accurate, the calculated value of the integral in equation \eqref{backpressure} is exact because of the orthogonality property of Legendre polynomials.
+Stated another way, the residuals in the approximation are large, but they integrate to 0 when multiplied by any Legendre polynomial up to the number of vertical modes.
+An example of the pressure approximations using linear, quadratic, and cubic Legendre polynomials are shown in figure \ref{fig:legendre}.
+
+The exact symbolic integration approach is both faster and more accurate than using a large number of quadrature points.
+The same technique could be used to exactly calculate the ocean backpressure for any model, say the full Stokes equations, using terrain-following coordinates together with a Legendre polynomial expansion in the vertical.
+
+
+
+
+\section{Discussion}
+
+\section{Conclusions}
+
+
+
+\bibliographystyle{plainnat}
+\bibliography{icepack.bib}
+
+\end{document}
